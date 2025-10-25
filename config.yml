@@ -1,7 +1,7 @@
 # This is a simplified config where the rest of the settings are omitted and will be set by default.
 # See https://gate.minekube.com/guide/config/ for the full configuration options.
 config:
-  bind: 0.0.0.0:34969
+  bind: 0.0.0.0:${PORT}
   onlineMode: true
   builtinCommands: false
   servers:
@@ -27,4 +27,4 @@ config:
 
   forwarding:
     mode: velocity
-    velocitySecret: '6YHBaxYVAWVC'
+    velocitySecret: 'this_is_overriden_at_runtime'
