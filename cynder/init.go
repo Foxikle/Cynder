@@ -163,7 +163,7 @@ func registerEvents(p *proxy.Proxy, nc messaging.NatsService, logger logr.Logger
 
 		server, success := servers.GetFallbackFromServer(e.Server(), e.Server().ServerInfo().Name())
 
-		if !success {
+		if !success || server == nil || server.ServerInfo() == e.Server().ServerInfo() {
 			msg := mini.Parse("<color:red><bold>WHOOPS!</bold></color:red><color:gray> Failed to rescue from internal disconnect. Initial kick reason: ")
 			e.SetResult(&proxy.DisconnectPlayerKickResult{
 				Reason: &component.Text{
@@ -187,7 +187,7 @@ func registerEvents(p *proxy.Proxy, nc messaging.NatsService, logger logr.Logger
 				S:       component.Style{},
 				Extra: []component.Component{
 					mini.Parse("<color:gold><bold>YOINK!</bold></color:gold><color:gray> A kick occurred in your connection, so you were placed in a lobby!"),
-					mini.Parse("<color:red>("),
+					mini.Parse("<color:red> ("),
 					e.OriginalReason(),
 					mini.Parse("<color:red>)"),
 				},
