@@ -2,6 +2,7 @@ package servers
 
 import (
 	"fmt"
+
 	"go.minekube.com/gate/pkg/edition/java/proxy"
 )
 
@@ -154,6 +155,9 @@ func GetNextFallbackGroup(currentGroup string, typeToStartFrom string) (string, 
 func GetFallbackFromServer(currentServer proxy.RegisteredServer, excludeIds ...string) (proxy.RegisteredServer, bool) {
 	var currentGroup, serverType string
 
+	// Add current server to exclusion list
+	excludeIds = append(excludeIds, currentServer.ServerInfo().Name())
+
 	// Find the group and type of the current server
 	for group, types := range currentServers {
 		for typ, servers := range types {
@@ -164,12 +168,18 @@ func GetFallbackFromServer(currentServer proxy.RegisteredServer, excludeIds ...s
 					break
 				}
 			}
+			if currentGroup != "" {
+				break
+			}
+		}
+		if currentGroup != "" {
+			break
 		}
 	}
 
 	// If we found the server's group and type, try normal fallback
 	if currentGroup != "" && serverType != "" {
-		fallbackServer, found := GetFallbackServer(currentGroup, serverType, append(excludeIds, currentServer.ServerInfo().Name())...)
+		fallbackServer, found := GetFallbackServer(currentGroup, serverType, excludeIds...)
 		if found {
 			return fallbackServer, true
 		}
@@ -178,47 +188,57 @@ func GetFallbackFromServer(currentServer proxy.RegisteredServer, excludeIds ...s
 	// If normal fallback failed or server wasn't found in groups, try alternative approaches
 	fmt.Printf("Server %s not found in any group or normal fallback failed, attempting alternative fallback\n", currentServer.ServerInfo().Name())
 
-	// Try fallback within the same group if we know the group but not the exact type
+	// Try fallback within the same group if we know the group
 	if currentGroup != "" && len(fallbackHierarchy[currentGroup]) > 0 {
-		// If we know the serverType, try to find next in hierarchy
-
-		// Try the last type in the current group's hierarchy (Typically a lobby or hub)
-		firstType := fallbackHierarchy[currentGroup][len(fallbackHierarchy[currentGroup])-1]
-		fallbackServer := GetLeastLoadedServer(currentGroup, firstType, append(excludeIds, currentServer.ServerInfo().Name())...)
+		// Try the last type in the current group's hierarchy (typically a lobby or hub)
+		lastType := fallbackHierarchy[currentGroup][len(fallbackHierarchy[currentGroup])-1]
+		fallbackServer := GetLeastLoadedServer(currentGroup, lastType, excludeIds...)
 		if fallbackServer != nil {
 			fmt.Printf("Fallback server found in same group: %s\n", fallbackServer.ServerInfo().Name())
 			return fallbackServer, true
 		}
 	}
-	// If still no success, try other groups in fallback hierarchy
-	for group, types := range fallbackHierarchy {
-		if group != currentGroup && len(types) > 0 {
-			// Try the first type in this group
-			fallbackServer := GetLeastLoadedServer(group, types[0], append(excludeIds, currentServer.ServerInfo().Name())...)
+
+	// Try other groups in fallback hierarchy order
+	groupKeys := make([]string, 0, len(fallbackHierarchy))
+	for key := range fallbackHierarchy {
+		groupKeys = append(groupKeys, key)
+	}
+
+	for _, group := range groupKeys {
+		if group == currentGroup {
+			continue // Skip current group, already tried above
+		}
+		types := fallbackHierarchy[group]
+		if len(types) > 0 {
+			// Try the last type in this group (typically the safest fallback like lobby/hub)
+			lastType := types[len(types)-1]
+			fallbackServer := GetLeastLoadedServer(group, lastType, excludeIds...)
 			if fallbackServer != nil {
-				fmt.Printf("Fallback server found in different group: %s\n", fallbackServer.ServerInfo().Name())
+				fmt.Printf("Fallback server found in different group %s: %s\n", group, fallbackServer.ServerInfo().Name())
 				return fallbackServer, true
 			}
 		}
 	}
 
-	// Last resort: try any available server from any group/type
-	for _, types := range currentServers {
-		for _, servers := range types {
-			if len(servers) > 0 {
-				for _, server := range servers {
-					if !contains(append(excludeIds, currentServer.ServerInfo().Name()), server.ServerInfo().Name()) {
-						fmt.Printf("Last resort fallback server found: %s\n", server.ServerInfo().Name())
-						return server, true
-					}
+	// Last resort: try any available server from any group/type that's not excluded
+	for group, types := range currentServers {
+		for typ, servers := range types {
+			for _, server := range servers {
+				if server == nil || server.ServerInfo() == nil {
+					continue
+				}
+				if !contains(excludeIds, server.ServerInfo().Name()) {
+					fmt.Printf("Last resort fallback server found: %s (group: %s, type: %s)\n",
+						server.ServerInfo().Name(), group, typ)
+					return server, true
 				}
 			}
 		}
 	}
 
-	fmt.Printf("No fallback found for server %s\n", currentServer.ServerInfo().Name())
+	fmt.Printf("No fallback found for server %s after checking all options\n", currentServer.ServerInfo().Name())
 	return nil, false
-
 }
 
 // contains checks if a slice contains a specific element
